@@ -1,6 +1,7 @@
 package es.servidor.hardcorereset;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -34,11 +35,20 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
 
     private void setupScoreboard() {
         scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+
         deaths = scoreboard.getObjective("muertes");
         if (deaths == null) {
-            deaths = scoreboard.registerNewObjective("muertes", "dummy", "☠ MUERTES");
+            deaths = scoreboard.registerNewObjective("muertes", Criteria.DEATH_COUNT, "☠ MUERTES");
         }
         deaths.setDisplaySlot(DisplaySlot.SIDEBAR);
+
+        // Barra de vida en la lista de jugadores (TAB).
+        Objective health = scoreboard.getObjective("tab_health");
+        if (health == null) {
+            health = scoreboard.registerNewObjective("tab_health", Criteria.HEALTH, "Vida");
+        }
+        health.setRenderType(RenderType.HEARTS);
+        health.setDisplaySlot(DisplaySlot.PLAYER_LIST);
     }
 
     @EventHandler
@@ -46,12 +56,8 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         if (resetting) return;
         Player dead = event.getPlayer();
 
-        // No conservar objetos ni experiencia de la vida anterior.
         event.setKeepInventory(false);
         event.setKeepLevel(false);
-
-        int oldScore = deaths.getScore(dead.getName()).getScore();
-        deaths.getScore(dead.getName()).setScore(oldScore + 1);
 
         resetting = true;
         World oldWorld = currentWorld;
@@ -68,18 +74,12 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
             World newWorld = Bukkit.createWorld(new WorldCreator(newName));
             if (newWorld == null) throw new IllegalStateException("No se pudo crear el mundo nuevo.");
 
-            newWorld.setDifficulty(org.bukkit.Difficulty.HARD);
+            newWorld.setDifficulty(Difficulty.HARD);
             currentWorld = newWorld;
             Location spawn = newWorld.getSpawnLocation();
+            getServer().setRespawnWorld(newWorld);
 
-            // El mundo de respawn global pasa a ser el nuevo.
-            Bukkit.getServer().setRespawnWorld(newWorld);
-
-            // El jugador muerto debe RESPONDER de verdad, no ser simplemente teletransportado
-            // mientras sigue muerto. Player.Spigot#respawn() existe en Paper 26.2.
-            if (dead.isDead()) {
-                dead.spigot().respawn();
-            }
+            if (dead.isDead()) dead.spigot().respawn();
 
             for (Player p : Bukkit.getOnlinePlayers()) {
                 p.closeInventory();
@@ -98,13 +98,10 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
                 p.setInvulnerable(false);
                 p.setAllowFlight(false);
                 p.setFlying(false);
-
-                // El muerto será colocado por PlayerRespawnEvent; los demás se teletransportan.
                 if (p != dead) p.teleport(spawn);
             }
 
             Bukkit.getScheduler().runTask(this, () -> {
-                // Paper documenta que algunos cambios de estado deben hacerse después del respawn.
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     p.setGameMode(GameMode.SURVIVAL);
                     p.setInvulnerable(false);
@@ -127,8 +124,7 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     @EventHandler
     public void onRespawn(PlayerRespawnEvent event) {
         if (currentWorld == null) return;
-        Location spawn = currentWorld.getSpawnLocation();
-        event.setRespawnLocation(spawn);
+        event.setRespawnLocation(currentWorld.getSpawnLocation());
 
         Bukkit.getScheduler().runTask(this, () -> {
             Player p = event.getPlayer();
