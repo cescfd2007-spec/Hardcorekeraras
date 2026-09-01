@@ -17,7 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
-    private boolean resetting = false;
+    private boolean resetting;
     private World currentWorld;
 
     @Override
@@ -33,7 +33,6 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         resetting = true;
 
         World oldWorld = currentWorld;
-
         Bukkit.broadcastMessage("§c§l¡ALGUIEN HA MUERTO!");
         Bukkit.broadcastMessage("§7La partida se reinicia...");
 
@@ -44,17 +43,13 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         try {
             if (oldWorld == null) throw new IllegalStateException("No se encontró el mundo actual.");
 
-            // Primero sacamos a todos del mundo viejo a una ubicación temporal.
             String newName = oldWorld.getName() + "_new_" + System.currentTimeMillis();
-            World newWorld = new WorldCreator(newName)
-                    .hardcore(true)
-                    .difficulty(Difficulty.HARD)
-                    .createWorld();
+            World newWorld = new WorldCreator(newName).hardcore(true).createWorld();
+            if (newWorld == null) throw new IllegalStateException("No se pudo crear el mundo nuevo.");
 
-            if (newWorld == null) {
-                throw new IllegalStateException("No se pudo crear el mundo nuevo.");
-            }
-
+            // En Paper 26.2 la dificultad se establece en el mundo ya creado.
+            newWorld.setDifficulty(Difficulty.HARD);
+            Bukkit.setRespawnWorld(newWorld);
             currentWorld = newWorld;
             Location spawn = newWorld.getSpawnLocation();
 
@@ -65,8 +60,7 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
                 player.setExp(0);
                 player.setLevel(0);
                 player.setTotalExperience(0);
-                player.getActivePotionEffects().forEach(effect ->
-                        player.removePotionEffect(effect.getType()));
+                player.getActivePotionEffects().forEach(effect -> player.removePotionEffect(effect.getType()));
                 player.setGameMode(GameMode.SURVIVAL);
                 player.setHealth(player.getMaxHealth());
                 player.setFoodLevel(20);
@@ -79,15 +73,11 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
             Bukkit.broadcastMessage("§a§l¡NUEVO MUNDO!");
             Bukkit.broadcastMessage("§7Todos empezáis desde cero.");
 
-            // Descargar y borrar el mundo anterior.
-            if (oldWorld != newWorld) {
-                Path oldFolder = oldWorld.getWorldFolder().toPath();
-                String oldName = oldWorld.getName();
-
-                if (Bukkit.unloadWorld(oldWorld, false)) {
-                    deleteWorldFolder(oldFolder);
-                    getLogger().info("Mundo eliminado: " + oldName);
-                }
+            Path oldFolder = oldWorld.getWorldFolder().toPath();
+            String oldName = oldWorld.getName();
+            if (oldWorld != newWorld && Bukkit.unloadWorld(oldWorld, false)) {
+                deleteWorldFolder(oldFolder);
+                getLogger().info("Mundo eliminado: " + oldName);
             }
         } catch (Exception ex) {
             getLogger().severe("No se pudo reiniciar el mundo: " + ex.getMessage());
@@ -101,11 +91,8 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         if (!Files.exists(folder)) return;
         try (var stream = Files.walk(folder)) {
             stream.sorted((a, b) -> b.compareTo(a)).forEach(path -> {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (IOException e) {
-                    getLogger().warning("No se pudo borrar " + path + ": " + e.getMessage());
-                }
+                try { Files.deleteIfExists(path); }
+                catch (IOException e) { getLogger().warning("No se pudo borrar " + path + ": " + e.getMessage()); }
             });
         }
     }

@@ -1,25 +1,19 @@
 name: Compilar plugin
-
 on:
   workflow_dispatch:
   push:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar código
-        uses: actions/checkout@v5
-      - name: Instalar Java 25
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Compilar
-        run: mvn -B package
-      - name: Guardar JAR
-        uses: actions/upload-artifact@v4
+      - run: mvn -B package
+      - uses: actions/upload-artifact@v4
         with:
           name: HardcoreWorldReset
-          path: target/hardcore-world-reset-1.0.1.jar
+          path: target/hardcore-world-reset-1.0.2.jar
