@@ -1,6 +1,7 @@
 package es.servidor.hardcorereset;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -12,8 +13,8 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
-import java.nio.file.*;
-import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private boolean resetting = false;
@@ -22,7 +23,7 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        currentWorld = Bukkit.getWorlds().get(0);
+        currentWorld = Bukkit.getWorlds().getFirst();
         getLogger().info("HardcoreWorldReset activado.");
     }
 
@@ -31,27 +32,32 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         if (resetting) return;
         resetting = true;
 
-        Player dead = event.getPlayer();
         World oldWorld = currentWorld;
 
         Bukkit.broadcastMessage("§c§l¡ALGUIEN HA MUERTO!");
         Bukkit.broadcastMessage("§7La partida se reinicia...");
 
-        // Dejar que termine el evento de muerte y hacer el cambio en el siguiente tick.
-        Bukkit.getScheduler().runTask(this, () -> resetWorld(oldWorld, dead.getName()));
+        Bukkit.getScheduler().runTask(this, () -> resetWorld(oldWorld));
     }
 
-    private void resetWorld(World oldWorld, String deadName) {
+    private void resetWorld(World oldWorld) {
         try {
-            // Crear un mundo completamente nuevo con semilla aleatoria.
-            String newName = "world_" + System.currentTimeMillis();
-            World newWorld = Bukkit.createWorld(new WorldCreator(newName));
-            if (newWorld == null) throw new IllegalStateException("No se pudo crear el mundo nuevo.");
+            if (oldWorld == null) throw new IllegalStateException("No se encontró el mundo actual.");
+
+            // Primero sacamos a todos del mundo viejo a una ubicación temporal.
+            String newName = oldWorld.getName() + "_new_" + System.currentTimeMillis();
+            World newWorld = new WorldCreator(newName)
+                    .hardcore(true)
+                    .difficulty(Difficulty.HARD)
+                    .createWorld();
+
+            if (newWorld == null) {
+                throw new IllegalStateException("No se pudo crear el mundo nuevo.");
+            }
 
             currentWorld = newWorld;
             Location spawn = newWorld.getSpawnLocation();
 
-            // Todos empiezan de cero.
             for (Player player : Bukkit.getOnlinePlayers()) {
                 player.closeInventory();
                 player.getInventory().clear();
@@ -73,15 +79,14 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
             Bukkit.broadcastMessage("§a§l¡NUEVO MUNDO!");
             Bukkit.broadcastMessage("§7Todos empezáis desde cero.");
 
-            // El mundo anterior ya no tiene jugadores: se descarga y se elimina.
-            if (oldWorld != null && oldWorld != newWorld) {
+            // Descargar y borrar el mundo anterior.
+            if (oldWorld != newWorld) {
+                Path oldFolder = oldWorld.getWorldFolder().toPath();
                 String oldName = oldWorld.getName();
-                boolean unloaded = Bukkit.unloadWorld(oldWorld, false);
-                if (unloaded) {
-                    deleteWorldFolder(oldWorld.getWorldFolder());
+
+                if (Bukkit.unloadWorld(oldWorld, false)) {
+                    deleteWorldFolder(oldFolder);
                     getLogger().info("Mundo eliminado: " + oldName);
-                } else {
-                    getLogger().warning("No se pudo descargar el mundo antiguo: " + oldName);
                 }
             }
         } catch (Exception ex) {
