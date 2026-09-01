@@ -1,5 +1,5 @@
 name: HardcoreWorldReset
-version: 1.0.2
+version: 1.0.0
 main: es.servidor.hardcorereset.HardcoreWorldReset
 api-version: '26.2'
-description: Reinicia el mundo cuando muere cualquier jugador.
+description: Reinicia el mundo cuando muere cualquier jugador y mantiene un contador de muertes.
