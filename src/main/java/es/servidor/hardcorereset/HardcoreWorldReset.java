@@ -49,7 +49,7 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
 
             // En Paper 26.2 la dificultad se establece en el mundo ya creado.
             newWorld.setDifficulty(Difficulty.HARD);
-            Bukkit.setRespawnWorld(newWorld);
+            getServer().setRespawnWorld(newWorld);
             currentWorld = newWorld;
             Location spawn = newWorld.getSpawnLocation();
 
