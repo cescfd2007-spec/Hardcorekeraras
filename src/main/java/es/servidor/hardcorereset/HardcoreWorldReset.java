@@ -4,6 +4,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.entity.Player;
@@ -11,6 +13,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -19,6 +22,9 @@ import org.bukkit.scoreboard.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private boolean resetting = false;
@@ -27,6 +33,7 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private World currentEnd;
     private Scoreboard scoreboard;
     private Objective deaths;
+    private final Map<UUID, Long> portalCooldown = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -36,7 +43,22 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         if (currentWorld == null) currentWorld = Bukkit.getWorlds().get(0);
 
         currentNether = findWorld(org.bukkit.World.Environment.NETHER);
+        if (currentNether == null) {
+            currentNether = new WorldCreator(currentWorld.getName() + "_nether")
+                    .environment(World.Environment.NETHER)
+                    .createWorld();
+        }
+
         currentEnd = findWorld(org.bukkit.World.Environment.THE_END);
+        if (currentEnd == null) {
+            currentEnd = new WorldCreator(currentWorld.getName() + "_the_end")
+                    .environment(World.Environment.THE_END)
+                    .createWorld();
+        }
+
+        if (currentNether == null || currentEnd == null) {
+            getLogger().severe("No se pudieron cargar/crear Nether y End iniciales.");
+        }
 
         setupScoreboard();
         for (Player p : Bukkit.getOnlinePlayers()) forceNormalState(p);
@@ -160,6 +182,74 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
             resetPlayer(p);
             p.teleport(currentWorld.getSpawnLocation());
         });
+    }
+
+    // Paper 26.2 puede no activar el flujo vanilla de portales para dimensiones creadas
+    // dinámicamente. Por eso detectamos directamente el bloque NETHER_PORTAL y
+    // hacemos nosotros el viaje entre las dimensiones de la partida actual.
+    @EventHandler
+    public void onPortalBlock(PlayerMoveEvent event) {
+        Player player = event.getPlayer();
+        if (currentWorld == null || currentNether == null) return;
+
+        Block block = event.getTo().getBlock();
+        if (block.getType() != Material.NETHER_PORTAL) return;
+
+        long now = System.currentTimeMillis();
+        long last = portalCooldown.getOrDefault(player.getUniqueId(), 0L);
+        if (now - last < 1500L) return;
+        portalCooldown.put(player.getUniqueId(), now);
+
+        World from = player.getWorld();
+        Location fromLoc = player.getLocation();
+        World targetWorld;
+        Location target;
+
+        if (from == currentWorld) {
+            targetWorld = currentNether;
+            target = new Location(targetWorld, fromLoc.getX() / 8.0, 80, fromLoc.getZ() / 8.0, fromLoc.getYaw(), fromLoc.getPitch());
+        } else if (from == currentNether) {
+            targetWorld = currentWorld;
+            target = new Location(targetWorld, fromLoc.getX() * 8.0, 80, fromLoc.getZ() * 8.0, fromLoc.getYaw(), fromLoc.getPitch());
+        } else {
+            return;
+        }
+
+        target = findSafePortalLocation(target);
+        createSimplePortal(target);
+        player.teleport(target);
+    }
+
+    private Location findSafePortalLocation(Location target) {
+        World world = target.getWorld();
+        if (world == null) return target;
+        int x = target.getBlockX();
+        int z = target.getBlockZ();
+        int y = Math.max(world.getMinHeight() + 2, Math.min(world.getMaxHeight() - 6, 80));
+        return new Location(world, x + 0.5, y + 1, z + 0.5);
+    }
+
+    private void createSimplePortal(Location center) {
+        World world = center.getWorld();
+        if (world == null) return;
+        int x = center.getBlockX();
+        int y = center.getBlockY() - 1;
+        int z = center.getBlockZ();
+
+        // Marco vertical 4x5, orientado en XZ para que siempre haya un portal funcional.
+        for (int dy = 0; dy < 5; dy++) {
+            world.getBlockAt(x - 1, y + dy, z).setType(Material.OBSIDIAN);
+            world.getBlockAt(x + 2, y + dy, z).setType(Material.OBSIDIAN);
+        }
+        for (int dx = -1; dx <= 2; dx++) {
+            world.getBlockAt(x + dx, y, z).setType(Material.OBSIDIAN);
+            world.getBlockAt(x + dx, y + 4, z).setType(Material.OBSIDIAN);
+        }
+        for (int dx = 0; dx <= 1; dx++) {
+            for (int dy = 1; dy <= 3; dy++) {
+                world.getBlockAt(x + dx, y + dy, z).setType(Material.NETHER_PORTAL);
+            }
+        }
     }
 
     @EventHandler
