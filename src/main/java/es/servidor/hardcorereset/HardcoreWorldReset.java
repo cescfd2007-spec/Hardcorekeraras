@@ -188,6 +188,9 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
                     fromLoc.getPitch()
             );
             event.setTo(dest);
+            event.setCanCreatePortal(true);
+            event.setSearchRadius(16);
+            event.setCreationRadius(16);
             return;
         }
 
@@ -204,6 +207,9 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
                     fromLoc.getPitch()
             );
             event.setTo(dest);
+            event.setCanCreatePortal(true);
+            event.setSearchRadius(16);
+            event.setCreationRadius(16);
             return;
         }
 
@@ -211,12 +217,16 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL
                 && env == World.Environment.NORMAL) {
             event.setTo(currentEnd.getSpawnLocation());
+            event.setCanCreatePortal(true);
+            event.setCreationRadius(16);
             return;
         }
 
         if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL
                 && env == World.Environment.THE_END) {
             event.setTo(currentWorld.getSpawnLocation());
+            event.setCanCreatePortal(true);
+            event.setCreationRadius(16);
         }
     }
 
