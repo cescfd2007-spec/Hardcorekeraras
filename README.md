@@ -1,8 +1,3 @@
-# HardcoreWorldReset 26.2 — FIX 6
+# HardcoreWorldReset 26.2 FIX 8
 
-- Reinicia Overworld, Nether y End juntos cuando muere cualquier jugador.
-- Todos aparecen desde cero en el Overworld nuevo.
-- La vida se muestra en TAB y debajo del nombre.
-- Mantiene el contador de muertes en el sidebar.
-- Reinicia todos los avances/achievements de todos los jugadores en cada muerte.
-- Requiere Paper 26.2 y Java 25.
+Reinicio global de Overworld, Nether y End. Los portales se controlan mediante PlayerTeleportEvent para enviar siempre a la dimensión de la partida actual. Los nombres de las tres dimensiones se guardan en config.yml para conservar la partida actual tras reiniciar el servidor. Incluye contador de muertes, vida en TAB y debajo del nombre, y reinicio de avances.

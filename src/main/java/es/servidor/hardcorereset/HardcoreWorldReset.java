@@ -11,7 +11,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerPortalEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.*;
@@ -19,6 +18,7 @@ import org.bukkit.scoreboard.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Random;
 
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private boolean resetting = false;
@@ -31,18 +31,45 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        currentWorld = Bukkit.getWorlds().stream()
-                .filter(w -> w.getEnvironment() == World.Environment.NORMAL)
-                .findFirst().orElse(Bukkit.getWorlds().get(0));
-        currentNether = Bukkit.getWorlds().stream()
-                .filter(w -> w.getEnvironment() == World.Environment.NETHER)
-                .findFirst().orElse(null);
-        currentEnd = Bukkit.getWorlds().stream()
-                .filter(w -> w.getEnvironment() == World.Environment.THE_END)
-                .findFirst().orElse(null);
+        currentWorld = loadConfiguredWorld("world", World.Environment.NORMAL);
+        currentNether = loadConfiguredWorld("nether", World.Environment.NETHER);
+        currentEnd = loadConfiguredWorld("end", World.Environment.THE_END);
+
+        // Primera instalación: reutilizar los mundos que ya existan.
+        if (currentWorld == null) {
+            currentWorld = Bukkit.getWorlds().stream()
+                    .filter(w -> w.getEnvironment() == World.Environment.NORMAL)
+                    .findFirst().orElse(Bukkit.getWorlds().get(0));
+        }
+        if (currentNether == null) {
+            currentNether = Bukkit.getWorlds().stream()
+                    .filter(w -> w.getEnvironment() == World.Environment.NETHER)
+                    .findFirst().orElse(null);
+        }
+        if (currentEnd == null) {
+            currentEnd = Bukkit.getWorlds().stream()
+                    .filter(w -> w.getEnvironment() == World.Environment.THE_END)
+                    .findFirst().orElse(null);
+        }
+        saveConfiguredWorlds();
         setupScoreboard();
         for (Player p : Bukkit.getOnlinePlayers()) forceNormalState(p);
         getLogger().info("HardcoreWorldReset activado.");
+    }
+
+    private World loadConfiguredWorld(String key, World.Environment environment) {
+        String name = getConfig().getString("current-worlds." + key);
+        if (name == null || name.isBlank()) return null;
+        World existing = Bukkit.getWorld(name);
+        if (existing != null) return existing;
+        return Bukkit.createWorld(new WorldCreator(name).environment(environment));
+    }
+
+    private void saveConfiguredWorlds() {
+        if (currentWorld != null) getConfig().set("current-worlds.world", currentWorld.getName());
+        if (currentNether != null) getConfig().set("current-worlds.nether", currentNether.getName());
+        if (currentEnd != null) getConfig().set("current-worlds.end", currentEnd.getName());
+        saveConfig();
     }
 
     private void setupScoreboard() {
@@ -61,6 +88,13 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         }
         health.setRenderType(RenderType.HEARTS);
         health.setDisplaySlot(DisplaySlot.PLAYER_LIST);
+
+        Objective healthBelow = scoreboard.getObjective("health_below_name");
+        if (healthBelow == null) {
+            healthBelow = scoreboard.registerNewObjective("health_below_name", Criteria.HEALTH, "❤");
+        }
+        healthBelow.setRenderType(RenderType.HEARTS);
+        healthBelow.setDisplaySlot(DisplaySlot.BELOW_NAME);
     }
 
     @EventHandler
@@ -86,17 +120,21 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         try {
             String id = String.valueOf(System.currentTimeMillis());
             String base = "hardcore_" + id;
+            long seed = new Random().nextLong();
 
             World newWorld = new WorldCreator(base)
                     .environment(World.Environment.NORMAL)
+                    .seed(seed)
                     .hardcore(false)
                     .createWorld();
             World newNether = new WorldCreator(base + "_nether")
                     .environment(World.Environment.NETHER)
+                    .seed(seed)
                     .hardcore(false)
                     .createWorld();
             World newEnd = new WorldCreator(base + "_the_end")
                     .environment(World.Environment.THE_END)
+                    .seed(seed)
                     .hardcore(false)
                     .createWorld();
 
@@ -174,33 +212,35 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onPortal(PlayerPortalEvent event) {
+    public void onPortal(org.bukkit.event.player.PlayerTeleportEvent event) {
         if (currentWorld == null || currentNether == null || currentEnd == null) return;
 
         Player player = event.getPlayer();
         World from = event.getFrom().getWorld();
         if (from == null) return;
 
-        PlayerTeleportEvent.TeleportCause cause = event.getCause();
-        Location to = event.getTo().clone();
-
-        if (cause == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) {
-            if (from == currentWorld) {
-                // Overworld -> NUEVO Nether. Keep vanilla's coordinate scaling.
-                to.setWorld(currentNether);
-                event.setTo(to);
-            } else if (from == currentNether) {
-                // Nether -> NUEVO Overworld. Keep vanilla's coordinate scaling.
-                to.setWorld(currentWorld);
-                event.setTo(to);
-            }
-        } else if (cause == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
-            if (from == currentWorld) {
-                event.setTo(currentEnd.getSpawnLocation());
-            } else if (from == currentEnd) {
-                event.setTo(currentWorld.getSpawnLocation());
-            }
+        World target = null;
+        if (event.getCause() == org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) {
+            if (from.getUID().equals(currentWorld.getUID())) target = currentNether;
+            else if (from.getUID().equals(currentNether.getUID())) target = currentWorld;
+        } else if (event.getCause() == org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            if (from.getUID().equals(currentWorld.getUID())) target = currentEnd;
+            else if (from.getUID().equals(currentEnd.getUID())) target = currentWorld;
         }
+
+        if (target == null) return;
+
+        // Cancelamos la resolución vanilla del portal y hacemos el viaje manualmente.
+        // Así nunca puede escoger un Nether/End antiguo.
+        event.setCancelled(true);
+        player.setPortalCooldown(20);
+        Location destination = target.getSpawnLocation().clone();
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (player.isOnline()) {
+                player.teleport(destination);
+                player.setPortalCooldown(20);
+            }
+        });
     }
 
     @EventHandler
