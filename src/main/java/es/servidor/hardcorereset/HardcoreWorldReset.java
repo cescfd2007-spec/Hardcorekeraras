@@ -11,6 +11,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerPortalEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scoreboard.*;
 
@@ -21,13 +23,23 @@ import java.nio.file.Path;
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private boolean resetting = false;
     private World currentWorld;
+    private World currentNether;
+    private World currentEnd;
     private Scoreboard scoreboard;
     private Objective deaths;
 
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        currentWorld = Bukkit.getWorlds().get(0);
+        currentWorld = Bukkit.getWorlds().stream()
+                .filter(w -> w.getEnvironment() == World.Environment.NORMAL)
+                .findFirst().orElse(Bukkit.getWorlds().get(0));
+        currentNether = Bukkit.getWorlds().stream()
+                .filter(w -> w.getEnvironment() == World.Environment.NETHER)
+                .findFirst().orElse(null);
+        currentEnd = Bukkit.getWorlds().stream()
+                .filter(w -> w.getEnvironment() == World.Environment.THE_END)
+                .findFirst().orElse(null);
         setupScoreboard();
         for (Player p : Bukkit.getOnlinePlayers()) forceNormalState(p);
         getLogger().info("HardcoreWorldReset activado.");
@@ -69,55 +81,125 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     }
 
     private void resetWorld(World oldWorld, Player dead) {
+        World oldNether = currentNether;
+        World oldEnd = currentEnd;
         try {
-            String newName = "world_" + System.currentTimeMillis();
-            World newWorld = Bukkit.createWorld(new WorldCreator(newName));
-            if (newWorld == null) throw new IllegalStateException("No se pudo crear el mundo nuevo.");
+            String id = String.valueOf(System.currentTimeMillis());
+            String base = "hardcore_" + id;
+
+            World newWorld = new WorldCreator(base)
+                    .environment(World.Environment.NORMAL)
+                    .hardcore(false)
+                    .createWorld();
+            World newNether = new WorldCreator(base + "_nether")
+                    .environment(World.Environment.NETHER)
+                    .hardcore(false)
+                    .createWorld();
+            World newEnd = new WorldCreator(base + "_the_end")
+                    .environment(World.Environment.THE_END)
+                    .hardcore(false)
+                    .createWorld();
+
+            if (newWorld == null || newNether == null || newEnd == null) {
+                throw new IllegalStateException("No se pudieron crear las tres dimensiones nuevas.");
+            }
 
             newWorld.setDifficulty(Difficulty.HARD);
+            newNether.setDifficulty(Difficulty.HARD);
+            newEnd.setDifficulty(Difficulty.HARD);
+
             currentWorld = newWorld;
-            Location spawn = newWorld.getSpawnLocation();
+            currentNether = newNether;
+            currentEnd = newEnd;
             getServer().setRespawnWorld(newWorld);
+
+            resetAdvancements();
 
             if (dead.isDead()) dead.spigot().respawn();
 
+            Location spawn = newWorld.getSpawnLocation();
             for (Player p : Bukkit.getOnlinePlayers()) {
-                p.closeInventory();
-                p.getInventory().clear();
-                p.getEnderChest().clear();
-                p.setExp(0);
-                p.setLevel(0);
-                p.setTotalExperience(0);
-                p.getActivePotionEffects().forEach(e -> p.removePotionEffect(e.getType()));
-                p.setHealth(p.getMaxHealth());
-                p.setFoodLevel(20);
-                p.setSaturation(5);
-                p.setFireTicks(0);
-                p.setFallDistance(0);
-                p.setGameMode(GameMode.SURVIVAL);
-                p.setInvulnerable(false);
-                p.setAllowFlight(false);
-                p.setFlying(false);
+                resetPlayer(p);
                 if (p != dead) p.teleport(spawn);
             }
 
             Bukkit.getScheduler().runTask(this, () -> {
                 for (Player p : Bukkit.getOnlinePlayers()) {
-                    p.setGameMode(GameMode.SURVIVAL);
-                    p.setInvulnerable(false);
-                    p.setAllowFlight(false);
-                    p.setFlying(false);
-                    p.teleport(spawn);
+                    resetPlayer(p);
+                    p.teleport(newWorld.getSpawnLocation());
                 }
                 Bukkit.broadcastMessage("§a§l¡NUEVO MUNDO!");
-                Bukkit.broadcastMessage("§7Todos empezáis desde cero.");
+                Bukkit.broadcastMessage("§7Overworld, Nether y End han sido reiniciados.");
+
                 resetOldWorld(oldWorld);
+                resetOldWorld(oldNether);
+                resetOldWorld(oldEnd);
             });
         } catch (Exception ex) {
-            getLogger().severe("No se pudo reiniciar el mundo: " + ex.getMessage());
+            getLogger().severe("No se pudo reiniciar las dimensiones: " + ex.getMessage());
             ex.printStackTrace();
         } finally {
             resetting = false;
+        }
+    }
+
+    private void resetPlayer(Player p) {
+        p.closeInventory();
+        p.getInventory().clear();
+        p.getEnderChest().clear();
+        p.setExp(0);
+        p.setLevel(0);
+        p.setTotalExperience(0);
+        p.getActivePotionEffects().forEach(e -> p.removePotionEffect(e.getType()));
+        p.setHealth(p.getMaxHealth());
+        p.setFoodLevel(20);
+        p.setSaturation(5);
+        p.setFireTicks(0);
+        p.setFallDistance(0);
+        p.setGameMode(GameMode.SURVIVAL);
+        p.setInvulnerable(false);
+        p.setAllowFlight(false);
+        p.setFlying(false);
+    }
+
+    private void resetAdvancements() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            Bukkit.getServer().advancementIterator().forEachRemaining(advancement -> {
+                var progress = p.getAdvancementProgress(advancement);
+                for (String criterion : progress.getAwardedCriteria()) {
+                    progress.revokeCriteria(criterion);
+                }
+            });
+        }
+    }
+
+    @EventHandler
+    public void onPortal(PlayerPortalEvent event) {
+        if (currentWorld == null || currentNether == null || currentEnd == null) return;
+
+        Player player = event.getPlayer();
+        World from = event.getFrom().getWorld();
+        if (from == null) return;
+
+        PlayerTeleportEvent.TeleportCause cause = event.getCause();
+        Location to = event.getTo().clone();
+
+        if (cause == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) {
+            if (from == currentWorld) {
+                // Overworld -> NUEVO Nether. Keep vanilla's coordinate scaling.
+                to.setWorld(currentNether);
+                event.setTo(to);
+            } else if (from == currentNether) {
+                // Nether -> NUEVO Overworld. Keep vanilla's coordinate scaling.
+                to.setWorld(currentWorld);
+                event.setTo(to);
+            }
+        } else if (cause == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            if (from == currentWorld) {
+                event.setTo(currentEnd.getSpawnLocation());
+            } else if (from == currentEnd) {
+                event.setTo(currentWorld.getSpawnLocation());
+            }
         }
     }
 
