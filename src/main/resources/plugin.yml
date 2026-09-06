@@ -1,5 +1,5 @@
 name: HardcoreWorldReset
-version: 1.0.1
+version: 1.0.2
 main: es.servidor.hardcorereset.HardcoreWorldReset
 api-version: '26.2'
 description: Reinicia el mundo al morir y muestra muertes y vida en TAB.
