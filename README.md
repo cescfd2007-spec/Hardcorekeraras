@@ -1,14 +1,5 @@
-# HardcoreWorldReset 26.2 — basado en FIX 6
-
-Esta versión vuelve a la lógica estable del FIX 6 y corrige el problema de dimensiones:
-- Overworld, Nether y End se regeneran juntos.
-- Se reutilizan los nombres `world`, `world_nether` y `world_the_end` (o el nombre base actual y sus sufijos), para que los portales nativos vuelvan a enlazar correctamente.
-- No intercepta ni cancela portales.
-- Sidebar de muertes.
-- Vida en TAB y debajo del nametag.
-- Reinicio de avances/logros.
-- Inventario y experiencia a cero.
-- El jugador muerto hace un respawn real y vuelve a Survival.
-- Se desactiva invulnerabilidad y vuelo.
-
-Requiere Paper 26.2 y Java 25.
+# HardcoreWorldReset 26.2 FIX 6
+Crea una nueva partida completa al morir: Overworld + Nether + End.
+Los portales Nether se fuerzan a las dimensiones de la partida actual.
+Los portales del End se fuerzan al End/Overworld de la partida actual.
+Incluye contador de muertes en sidebar y corazones de vida en TAB.

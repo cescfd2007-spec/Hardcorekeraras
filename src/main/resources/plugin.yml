@@ -1,5 +1,5 @@
 name: HardcoreWorldReset
-version: 1.0.0
+version: 1.0.2
 main: es.servidor.hardcorereset.HardcoreWorldReset
 api-version: '26.2'
-description: Hardcore por vidas, reinicio completo de Overworld/Nether/End y marcadores.
+description: Hardcore global con mundos nuevos de Overworld, Nether y End, contador de muertes y vida en TAB.
