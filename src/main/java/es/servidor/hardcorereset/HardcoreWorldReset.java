@@ -4,8 +4,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Difficulty;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.block.Block;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.entity.Player;
@@ -22,9 +20,6 @@ import org.bukkit.scoreboard.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private boolean resetting = false;
@@ -33,8 +28,6 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
     private World currentEnd;
     private Scoreboard scoreboard;
     private Objective deaths;
-    private final Map<UUID, Long> portalCooldown = new HashMap<>();
-    private final Map<UUID, Boolean> insidePortal = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -185,159 +178,49 @@ public final class HardcoreWorldReset extends JavaPlugin implements Listener {
         });
     }
 
-    // Paper 26.2 puede no activar el flujo vanilla de portales para dimensiones creadas
-    // dinámicamente. Por eso detectamos directamente el bloque NETHER_PORTAL y
-    // hacemos nosotros el viaje entre las dimensiones de la partida actual.
-    @EventHandler
-    public void onPortalBlock(PlayerMoveEvent event) {
-        Player player = event.getPlayer();
-        if (currentWorld == null || currentNether == null) return;
-
-        Location to = event.getTo();
-        if (to == null) return;
-
-        UUID uuid = player.getUniqueId();
-        boolean inPortal = to.getBlock().getType() == Material.NETHER_PORTAL;
-
-        // Debe salir del portal antes de poder usarlo otra vez.
-        // Esto evita el bucle infinito de teletransportes.
-        if (!inPortal) {
-            insidePortal.put(uuid, false);
-            return;
-        }
-        if (Boolean.TRUE.equals(insidePortal.get(uuid))) return;
-
-        long now = System.currentTimeMillis();
-        long last = portalCooldown.getOrDefault(uuid, 0L);
-        if (now - last < 3000L) return;
-
-        World from = player.getWorld();
-        World targetWorld;
-        Location desired;
-
-        if (from == currentWorld) {
-            targetWorld = currentNether;
-            desired = new Location(targetWorld,
-                    player.getLocation().getX() / 8.0, 80,
-                    player.getLocation().getZ() / 8.0);
-        } else if (from == currentNether) {
-            targetWorld = currentWorld;
-            desired = new Location(targetWorld,
-                    player.getLocation().getX() * 8.0, 80,
-                    player.getLocation().getZ() * 8.0);
-        } else {
-            return;
-        }
-
-        // Reutiliza un portal existente. Solo crea uno si no hay ninguno cerca.
-        Location targetPortal = findExistingPortal(targetWorld, desired, 16);
-        if (targetPortal == null) {
-            targetPortal = createSimplePortal(findSafePortalLocation(desired));
-        }
-        if (targetPortal == null) return;
-
-        portalCooldown.put(uuid, now);
-        insidePortal.put(uuid, true);
-
-        Location destination = targetPortal.clone().add(0.5, 0.0, 0.5);
-        destination.setYaw(player.getLocation().getYaw());
-        destination.setPitch(player.getLocation().getPitch());
-        player.teleport(destination);
-    }
-
-    private Location findExistingPortal(World world, Location center, int radius) {
-        int cx = center.getBlockX();
-        int cy = Math.max(world.getMinHeight() + 1,
-                Math.min(world.getMaxHeight() - 2, center.getBlockY()));
-        int cz = center.getBlockZ();
-
-        Location best = null;
-        double bestDistance = Double.MAX_VALUE;
-
-        for (int x = cx - radius; x <= cx + radius; x++) {
-            for (int y = Math.max(world.getMinHeight() + 1, cy - 16);
-                 y <= Math.min(world.getMaxHeight() - 2, cy + 16); y++) {
-                for (int z = cz - radius; z <= cz + radius; z++) {
-                    if (world.getBlockAt(x, y, z).getType() != Material.NETHER_PORTAL) continue;
-
-                    double dx = x + 0.5 - center.getX();
-                    double dy = y + 0.5 - center.getY();
-                    double dz = z + 0.5 - center.getZ();
-                    double distance = dx * dx + dy * dy + dz * dz;
-
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        best = new Location(world, x, y, z);
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    private Location findSafePortalLocation(Location target) {
-        World world = target.getWorld();
-        if (world == null) return target;
-
-        int x = target.getBlockX();
-        int z = target.getBlockZ();
-        int y = Math.max(world.getMinHeight() + 2,
-                Math.min(world.getMaxHeight() - 6, 80));
-
-        return new Location(world, x, y, z);
-    }
-
-    private Location createSimplePortal(Location center) {
-        World world = center.getWorld();
-        if (world == null) return null;
-
-        int x = center.getBlockX();
-        int y = center.getBlockY() - 1;
-        int z = center.getBlockZ();
-
-        for (int dy = 0; dy < 5; dy++) {
-            world.getBlockAt(x - 1, y + dy, z).setType(Material.OBSIDIAN);
-            world.getBlockAt(x + 2, y + dy, z).setType(Material.OBSIDIAN);
-        }
-        for (int dx = -1; dx <= 2; dx++) {
-            world.getBlockAt(x + dx, y, z).setType(Material.OBSIDIAN);
-            world.getBlockAt(x + dx, y + 4, z).setType(Material.OBSIDIAN);
-        }
-        for (int dx = 0; dx <= 1; dx++) {
-            for (int dy = 1; dy <= 3; dy++) {
-                world.getBlockAt(x + dx, y + dy, z).setType(Material.NETHER_PORTAL);
-            }
-        }
-        return new Location(world, x, y + 1, z);
-    }
-
+    // Dejamos que Minecraft/Paper gestione los portales de forma VANILLA.
+    // Solo cambiamos el mundo de destino para que siempre sea el de la partida actual.
+    // No construimos portales manualmente ni fijamos una altura (por ejemplo Y=80).
     @EventHandler
     public void onPortal(PlayerPortalEvent event) {
-        if (currentWorld == null || currentEnd == null) return;
+        if (currentWorld == null) return;
 
         World from = event.getFrom().getWorld();
         if (from == null) return;
 
-        // El Nether lo gestiona onPortalBlock. Cancelamos el evento vanilla
-        // para impedir que ambos sistemas se ejecuten a la vez.
         if (event.getCause() == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL) {
-            event.setCancelled(true);
-            return;
-        }
+            World target;
+            if (from == currentWorld) {
+                target = currentNether;
+            } else if (from == currentNether) {
+                target = currentWorld;
+            } else {
+                return;
+            }
 
-        if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL
-                && from.getEnvironment() == World.Environment.NORMAL) {
-            event.setTo(currentEnd.getSpawnLocation());
+            if (target == null) return;
+
+            // Conservamos las coordenadas que Paper calculó para el portal vanilla,
+            // cambiando únicamente el mundo. Así se mantiene la escala 1:8 y la
+            // búsqueda/creación natural del portal, incluida su altura apropiada.
+            Location vanillaDestination = event.getTo();
+            if (vanillaDestination != null) {
+                Location destination = vanillaDestination.clone();
+                destination.setWorld(target);
+                event.setTo(destination);
+            }
             event.setCanCreatePortal(true);
+            event.setSearchRadius(128);
             event.setCreationRadius(16);
             return;
         }
 
-        if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL
-                && from.getEnvironment() == World.Environment.THE_END) {
-            event.setTo(currentWorld.getSpawnLocation());
-            event.setCanCreatePortal(true);
-            event.setCreationRadius(16);
+        if (event.getCause() == PlayerTeleportEvent.TeleportCause.END_PORTAL) {
+            if (from.getEnvironment() == World.Environment.NORMAL && currentEnd != null) {
+                event.setTo(currentEnd.getSpawnLocation());
+            } else if (from.getEnvironment() == World.Environment.THE_END) {
+                event.setTo(currentWorld.getSpawnLocation());
+            }
         }
     }
 
